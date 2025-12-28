@@ -58,50 +58,101 @@ def detect_problem_type(df,target):
 
 
 @st.cache_data
-def preprocess_features(df,features):
+def preprocess_features(df,features,config=None):
     if not features:
         return pd.DataFrame()
 
-    #only use features that exist in the dataframe
-    valid_features=[f for f in features if f in df.columns]
+    # #only use features that exist in the dataframe
+    # valid_features=[f for f in features if f in df.columns]
+    # if not valid_features:
+    #     return pd.DataFrame()
+
+    # X=df[valid_features].copy()
+
+    # # Drop columns with many missing vals
+    # drop_cols=[col for col in X.columns if X[col].isnull().mean()>0.8]
+    # if drop_cols:
+    #     X=X.drop(columns=drop_cols)
+
+    # if X.empty:
+    #     return pd.DataFrame()
+    # Get config from session state or use defaults
+    if config is None:
+        config = getattr(st.session_state, 'preprocessing_config', {
+            'num_impute': 'median',
+            'cat_impute': 'most_frequent',
+            'missing_threshold': 0.8,
+            'cardinality_threshold': 50
+        })
+    
+    valid_features = [f for f in features if f in df.columns]
     if not valid_features:
         return pd.DataFrame()
-
-    X=df[valid_features].copy()
-
-    # Drop columns with many missing vals
-    drop_cols=[col for col in X.columns if X[col].isnull().mean()>0.8]
+    
+    X = df[valid_features].copy()
+    
+    # Drop columns based on configured threshold
+    drop_cols = [col for col in X.columns 
+                 if X[col].isnull().mean() > config['missing_threshold']]
     if drop_cols:
-        X=X.drop(columns=drop_cols)
-
+        X = X.drop(columns=drop_cols)
+        st.info(f"Dropped {len(drop_cols)} columns due to excessive missing values")
+    
     if X.empty:
         return pd.DataFrame()
-
     #separate categorical,numerical cols
     cat_cols=[col for col in X.columns if X[col].dtype=="object"]
     num_cols=[col for col in X.columns if col not in cat_cols]
 
     #numerical columns
+    # if num_cols:
+    #     num_imputer=SimpleImputer(strategy='median')
+    #     X[num_cols]=num_imputer.fit_transform(X[num_cols])
     if num_cols:
-        num_imputer=SimpleImputer(strategy='median')
-        X[num_cols]=num_imputer.fit_transform(X[num_cols])
-
+        if config['num_impute'] == 'drop':
+            X = X.dropna(subset=num_cols)
+        else:
+            num_imputer = SimpleImputer(strategy=config['num_impute'])
+            X[num_cols] = num_imputer.fit_transform(X[num_cols])
     #categorical cols
-    if cat_cols:
-        cat_imputer=SimpleImputer(strategy='most_frequent')
-        X[cat_cols]=cat_imputer.fit_transform(X[cat_cols])
+    # if cat_cols:
+    #     cat_imputer=SimpleImputer(strategy='most_frequent')
+    #     X[cat_cols]=cat_imputer.fit_transform(X[cat_cols])
 
-        #process categorical cols
-        for col in cat_cols.copy():  #use copy to avoid modifying list during iteration
-            if X[col].nunique()>50:  #drop high cardinality categorical cols
-                X=X.drop(columns=[col])
+    #     #process categorical cols
+    #     for col in cat_cols.copy():  #use copy to avoid modifying list during iteration
+    #         if X[col].nunique()>50:  #drop high cardinality categorical cols
+    #             X=X.drop(columns=[col])
+    #         else:
+    #             try:
+    #                 le=LabelEncoder()
+    #                 X[col]=le.fit_transform(X[col].astype(str))
+    #             except:
+    #                 X=X.drop(columns=[col])  #drop if encoding fails
+
+    # return X
+    if cat_cols:
+        if config['cat_impute'] == 'drop':
+            X = X.dropna(subset=cat_cols)
+        elif config['cat_impute'] == 'constant':
+            cat_imputer = SimpleImputer(strategy='constant', fill_value='missing')
+            X[cat_cols] = cat_imputer.fit_transform(X[cat_cols])
+        else:
+            cat_imputer = SimpleImputer(strategy=config['cat_impute'])
+            X[cat_cols] = cat_imputer.fit_transform(X[cat_cols])
+        
+        # Handle high cardinality with configured threshold
+        for col in cat_cols.copy():
+            if X[col].nunique() > config['cardinality_threshold']:
+                X = X.drop(columns=[col])
+                st.info(f"Dropped '{col}' due to high cardinality ({X[col].nunique()} unique values)")
             else:
                 try:
-                    le=LabelEncoder()
-                    X[col]=le.fit_transform(X[col].astype(str))
+                    le = LabelEncoder()
+                    X[col] = le.fit_transform(X[col].astype(str))
                 except:
-                    X=X.drop(columns=[col])  #drop if encoding fails
-
+                    X = X.drop(columns=[col])
+    
     return X
 
 
@@ -195,11 +246,10 @@ if st.session_state.page=="landing":
 
     center=st.columns([6,2,6])[1]
     with center:
-        if st.button("Start",use_container_width=True):
-            go_to_upload()
+        # if st.button("Start",use_container_width=True):
+        #     go_to_upload()
+        st.button("Start",use_container_width=True,on_click=go_to_upload,key="start_button")
 
-
-#      DATA LOAD/ML PAGE  #
 
 elif st.session_state.page=="upload":
     st.markdown("<h1 class='section-header'>ModelSelect</h1>",unsafe_allow_html=True)
@@ -308,6 +358,48 @@ elif st.session_state.page=="upload":
                 except Exception as e:
                     st.warning(f"Couldnt generate correlation heatmap: {e}")
 
+            #preprocessing options
+            with st.expander("⚙️ Preprocessing Options", expanded=False):
+                st.subheader("Configure Data Preprocessing")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write("**Numerical Features**")
+                    num_impute_strategy = st.selectbox(
+                        "Missing value imputation",
+                        ["median", "mean", "most_frequent", "drop"],
+                        help="How to handle missing values in numerical columns"
+                    )
+                    
+                    missing_threshold = st.slider(
+                        "Drop columns with missing % >",
+                        0, 100, 80, 5,
+                        help="Columns with more missing values than this will be dropped"
+                    )
+                
+                with col2:
+                    st.write("**Categorical Features**")
+                    cat_impute_strategy = st.selectbox(
+                        "Missing value imputation",
+                        ["most_frequent", "constant", "drop"],
+                        help="How to handle missing values in categorical columns"
+                    )
+                    
+                    cardinality_threshold = st.slider(
+                        "Drop high cardinality features >",
+                        10, 100, 50, 5,
+                        help="Categorical columns with more unique values than this will be dropped"
+                    )
+                
+                #store in session state
+                st.session_state.preprocessing_config = {
+                    'num_impute': num_impute_strategy,
+                    'cat_impute': cat_impute_strategy,
+                    'missing_threshold': missing_threshold / 100,  #convert to decimal
+                    'cardinality_threshold': cardinality_threshold
+                }
+                st.info(f"Current config: Numeric={num_impute_strategy}, Categorical={cat_impute_strategy}, Missing threshold={missing_threshold}%, Cardinality limit={cardinality_threshold}")
             #feature and target selection
             st.subheader("Select target and features")
             columns=df.columns.tolist()
@@ -400,7 +492,7 @@ elif st.session_state.page=="upload":
                         st.info(f"Detected problem type: *{problem_type}*")
 
                         #preprocess features
-                        X=preprocess_features(working_df, features)
+                        X=preprocess_features(working_df, features,getattr(st.session_state,'preprocessing_config',None))
                         if X.empty:
                             st.error(
                                 "no valid feat. remaining after preprocessing. please select different features.")
