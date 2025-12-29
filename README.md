@@ -4,6 +4,13 @@
 It allows users to upload datasets, select features and targets, configure preprocessing options, and automatically train & compare multiple ML models — all in one intuitive workspace.
 
 ---
+## <b> Streamlit app
+    Available on Streamlit: [Click here](https://modelselect.streamlit.app/)
+
+## <b> Video Demo:
+<p align="center">
+    <video src="https://github.com/user-attachments/assets/1c08c697-29c1-41fc-8976-24eeaf00c0b4" width="90%" controls></video>
+</p>
 
 ## <b>✨ Features</b>
 
