@@ -3,9 +3,9 @@
 <b>ModelSelect</b> is an interactive, no-code machine learning playground built with <b>Streamlit</b>.  
 It allows users to upload datasets, select features and targets, configure preprocessing options, and automatically train & compare multiple ML models — all in one intuitive workspace.
 
----
+
 ## <b> Streamlit app
-    Available on Streamlit: [Click here](https://modelselect.streamlit.app/)
+Try the live demo - no installation needed!: [https://modelselect.streamlit.app/](https://modelselect.streamlit.app/)
 
 ## <b> Video Demo:
 <p align="center">
